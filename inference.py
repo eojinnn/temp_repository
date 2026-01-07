@@ -104,9 +104,16 @@ def main(argv):
         data_gen_test = cls_data_generator.DataGenerator(
             params=params, split=test_splits[split_cnt], shuffle=False, per_file=True
         )
+
+        test_loader = torch.utils.data.DataLoader(
+            data_gen_test,
+            batch_size=None,    # 제너레이터가 이미 배치를 만들어서 줌
+            num_workers=0,      # 일꾼 4명 고용! (CPU 코어 수에 따라 4~8 조절)
+            pin_memory=True,    # GPU 전송 가속
+        )
         # Collect i/o data size and load model configuration
         data_in, data_out = data_gen_test.get_data_sizes()
-        model = model_architecture.CST_former(data_in, data_out, params)
+        model = model_architecture.SeldModel(data_in, data_out, params)
         model.to(device)
         # ---------------------------------------------------------------------
         # Evaluate on unseen test data
@@ -140,7 +147,7 @@ def main(argv):
         cls_feature_class.delete_and_create_folder(dcase_output_test_folder)
         print('Dumping recording-wise test results in: {}'.format(dcase_output_test_folder))
 
-        test_loss = test_epoch(data_gen_test, model, criterion, dcase_output_test_folder, params, device)
+        test_loss = test_epoch(test_loader, model, criterion, dcase_output_test_folder, params, device)
 
         use_jackknife = True
         test_ER, test_F, test_LE, test_LR, test_seld_scr, classwise_test_scr = score_obj.get_SELD_Results(
