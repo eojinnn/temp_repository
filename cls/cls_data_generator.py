@@ -3,12 +3,13 @@
 #
 
 import os
+import torch
 import numpy as np
 import cls.cls_feature_class as cls_feature_class
 from collections import deque
 import random
 
-class DataGenerator(object):
+class DataGenerator(torch.utils.data.IterableDataset):
     def __init__(
             self, params, split=1, shuffle=True, per_file=False, is_eval=False
     ):
@@ -107,7 +108,31 @@ class DataGenerator(object):
         self._label_batch_seq_len = self._batch_size * self._label_seq_len
 
         return
-
+    
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        
+        if worker_info is not None:
+            # 멀티 프로세싱일 경우: 파일 리스트를 워커 개수만큼 쪼갭니다.
+            # 예: 파일 100개, 워커 4개 -> 각 워커가 25개씩 담당
+            per_worker = int(np.ceil(len(self._filenames_list) / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            iter_start = worker_id * per_worker
+            iter_end = min(iter_start + per_worker, len(self._filenames_list))
+            
+            # 현재 워커가 담당할 파일들만 남김
+            self._filenames_list = self._filenames_list[iter_start:iter_end]
+            
+            # 파일 수가 줄었으니, 총 배치 수(_nb_total_batches)도 비율에 맞춰 줄여야 함
+            # (이렇게 안 하면 데이터가 없는데 계속 pop 하려고 해서 에러 남)
+            if not self._per_file:
+                 # 전체 프레임 수도 대략적으로 줄어든다고 가정
+                self._nb_total_batches = self._nb_total_batches // worker_info.num_workers
+            else:
+                self._nb_total_batches = len(self._filenames_list)
+                
+        return self.generate()
+    
     def generate(self):
         """
         Generates batches of samples
@@ -160,8 +185,8 @@ class DataGenerator(object):
                 # circular buffer. If not keep refilling it.
                 while len(self._circ_buf_feat) < self._feature_batch_seq_len:
                     # if not self._SS_multitask:
-                    temp_feat = np.load(os.path.join(self._feat_dir, self._filenames_list[file_cnt]))
-                    temp_label = np.load(os.path.join(self._label_dir, self._filenames_list[file_cnt]))
+                    temp_feat = np.load(os.path.join(self._feat_dir, self._filenames_list[file_cnt%len(self._filenames_list)]))
+                    temp_label = np.load(os.path.join(self._label_dir, self._filenames_list[file_cnt%len(self._filenames_list)]))
 
                     if not self._per_file:
                         # Inorder to support variable length features, and labels of different resolution.

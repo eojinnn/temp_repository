@@ -126,6 +126,22 @@ def main(argv):
         data_gen_val = cls_data_generator.DataGenerator(
             params=params, split=val_splits[split_cnt], shuffle=False, per_file=True
         )
+        
+        total_batches = data_gen_train.get_total_batches_in_data()
+        train_loader = torch.utils.data.DataLoader(
+            data_gen_train, 
+            batch_size=None,     # 제너레이터가 이미 배치를 만들어서 줌
+            num_workers=3,       # 일꾼 4명 고용! (CPU 코어 수에 따라 4~8 조절)
+            pin_memory=True,     # GPU 전송 가속
+            prefetch_factor=2    # 미리미리 데이터 준비
+        )
+
+        val_loader = torch.utils.data.DataLoader(
+            data_gen_val,
+            batch_size=None,    # 제너레이터가 이미 배치를 만들어서 줌
+            num_workers=0,      # 일꾼 4명 고용! (CPU 코어 수에 따라 4~8 조절)
+            pin_memory=True,    # GPU 전송 가속
+        )
 
         # Collect i/o data size and load model configuration
         data_in, data_out = data_gen_train.get_data_sizes()
@@ -185,14 +201,15 @@ def main(argv):
         valid_LE_rec = np.empty([params["nb_epochs"]])
         valid_LR_rec = np.empty([params["nb_epochs"]])
         learning_rate_rec = np.empty([params["nb_epochs"]])
+        best_val_loss = 99999
 
         for epoch_cnt in range(nb_epoch):
             # ---------------------------------------------------------------------
             # TRAINING
             # ---------------------------------------------------------------------
             start_time = time.time()
-            train_loss, learning_rate, = train_epoch(data_gen_train, optimizer, model, criterion,
-                                                         params, device, epoch_cnt)
+            train_loss, learning_rate, = train_epoch(train_loader, optimizer, model, criterion, 
+                                                         params, device, epoch_cnt, total_batches)
 
             train_time = time.time() - start_time
 
@@ -200,7 +217,7 @@ def main(argv):
             # VALIDATION
             # ---------------------------------------------------------------------
             start_time = time.time()
-            val_loss = test_epoch(data_gen_val, model, criterion, dcase_output_val_folder, params, device)
+            val_loss = test_epoch(val_loader, model, criterion, dcase_output_val_folder, params, device)
             # Calculate the DCASE 2021 metrics - Location-aware detection and Class-aware localization scores
             val_ER, val_F, val_LE, val_LR, val_seld_scr, classwise_val_scr = score_obj.get_SELD_Results(
                 dcase_output_val_folder)

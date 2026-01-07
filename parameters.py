@@ -100,6 +100,20 @@ def get_params(argv='1'):
     # ########### User defined parameters ##############
     if argv == '1':
         print("USING DEFAULT PARAMETERS\n")
+
+    elif argv == '3':
+        print("FOA + multi ACCDOA\n")
+        params['quick_test'] = False
+        params['dataset'] = 'foa'
+        params['multi_accdoa'] = True
+
+        params['baseline'] = False
+        params['lr_scheduler'] = True
+        params['lr_by_epoch'] = True
+        params['lr_by_epoch_stay_epoch'] = 200 #150
+        params['nb_epochs'] = 500
+        params['batch_size'] = 128 
+
         
     elif argv == '21':
         print("[DST-attention] FOA + ACCDOA + Divided S-T (S dim : 16)\n")

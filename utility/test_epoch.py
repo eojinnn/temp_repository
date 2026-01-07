@@ -2,6 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plot
 import torch
+from torch.cuda.amp import autocast
 import csv
 
 plot.switch_backend('agg')
@@ -61,23 +62,35 @@ def determine_similar_location(sed_pred0, sed_pred1, doa_pred0, doa_pred1, class
 def test_epoch(data_generator, model, criterion, dcase_output_folder, params, device):
     # Number of frames for a 60 second audio with 100ms hop length = 600 frames
     # Number of frames in one batch (batch_size* sequence_length) consists of all the 600 frames above with zero padding in the remaining frames
-    test_filelist = data_generator.get_filelist()
+    if hasattr(data_generator, 'dataset'):
+        dataset = data_generator.dataset
+    else:
+        dataset = data_generator
+    
+    # [수정 2] 원본 DataGenerator의 메서드 호출
+    test_filelist = dataset.get_filelist()
 
     nb_test_batches, test_loss = 0, 0.
     model.eval()
     file_cnt = 0
     with torch.no_grad():
-        for data, target in data_generator.generate():
+        for i, (data, target) in enumerate(data_generator):
             # load one batch of data
 
-            data, target = torch.tensor(data).to(device).float(), torch.tensor(target).to(device).float()
+            data, target = data.to(device).float(), target.to(device).float()
             # process the batch of data based on chosen mode
-            output = model(data)
+            with autocast():
+                output = model(data)
+
+            # adjusted
+            if isinstance(output, tuple):
+                output = output[0]
+
             loss = criterion(output, target)
 
             if params['multi_accdoa'] is True:
                 sed_pred0, doa_pred0, sed_pred1, doa_pred1, sed_pred2, doa_pred2 = get_multi_accdoa_labels(
-                    output.detach().cpu().numpy(), params['unique_classes'])
+                    output.float().detach().cpu().numpy(), params['unique_classes'])
                 sed_pred0 = reshape_3Dto2D(sed_pred0)
                 doa_pred0 = reshape_3Dto2D(doa_pred0)
                 sed_pred1 = reshape_3Dto2D(sed_pred1)
@@ -188,7 +201,7 @@ def test_epoch(data_generator, model, criterion, dcase_output_folder, params, de
                                                            doa_pred[frame_cnt][class_cnt + params['unique_classes']],
                                                            doa_pred[frame_cnt][
                                                                class_cnt + 2 * params['unique_classes']]])
-            data_generator.write_output_format_file(output_file, output_dict)
+            dataset.write_output_format_file(output_file, output_dict)
 
             test_loss += loss.item()
             nb_test_batches += 1
