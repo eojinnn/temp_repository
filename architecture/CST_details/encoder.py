@@ -11,8 +11,9 @@ class conv_encoder(torch.nn.Module):
 
         self.conv_block_list = nn.ModuleList()
 
-        if self.params['ChAtten_DCA']: in_channels = 1
-        else: in_channels = in_feat_shape[1]
+        # if self.params['ChAtten_DCA']: in_channels = 1
+        # else: in_channels = in_feat_shape[1]
+        in_channels = 1
 
         for conv_cnt in range(len(params['f_pool_size'])):
             self.conv_block_list.append(nn.Sequential(

@@ -69,8 +69,9 @@ class FC_layer(torch.nn.Module):
     def forward(self, x:torch.Tensor):
         for fnn_cnt in range(len(self.fnn_list) - 1):
             x = self.fnn_list[fnn_cnt](x)
-        doa = torch.tanh(self.fnn_list[-1](x))
-        return doa
+        # doa = torch.tanh(self.fnn_list[-1](x))
+        # return doa
+        return x
 
 
 #####################################################################################################################

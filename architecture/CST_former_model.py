@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from architecture.CST_details.CST_encoder import SingleChannelEncoder
+from architecture.CST_details.CST_encoder import SingleChannelEncoder, CST_former 
 
 class SlotAttention(nn.Module):
     """
@@ -42,6 +42,15 @@ class SeldModel(torch.nn.Module):
         self.out_dim = self.num_tracks * self.out_per_track
         # [수정 1] Shared Encoder 인스턴스 생성
         self.encoder = SingleChannelEncoder(params, in_feat_shape)
+        # self.encoder = CST_former(in_feat_shape, out_shape, params)
+
+        if self.params.get('aux_loss', False):
+            self.iv_aux_head = nn.Sequential(
+                nn.Linear(self.params['rnn_size'], 64),
+                nn.ReLU(),
+                nn.Dropout(self.params['dropout_rate']),
+                nn.Linear(64, 3) # (X, Y, Z)
+            )
 
         self.channel_embed = nn.Parameter(torch.randn(1, 1, self.input_channels, self.rnn_size))
         self.track_embed = nn.Parameter(torch.randn(1, 1, self.num_tracks, self.rnn_size))
@@ -100,6 +109,7 @@ class SeldModel(torch.nn.Module):
         # (B, 7, T, F) -> (B*7, 1, T, F) -> (B*7, T, H)
         x_reshaped = x.reshape(B * C, 1, T, F)
         features_flat = self.encoder(x_reshaped) #(896,50,128) 896=batch(128)*7(channel)
+
         
         # 2. Key/Value 준비: "전체 문맥(Global Context)"
         # 각 Query(채널)가 "다른 모든 채널"을 참조할 수 있게 함.
@@ -119,28 +129,26 @@ class SeldModel(torch.nn.Module):
         sa_out, _ = self.channel_sa(memory, memory, memory, attn_mask=mask)
         memory = self.norm_sa(memory + sa_out)
 
+        # --- Auxiliary loss ---
+        pred_iv = None
+        if self.params.get('aux_loss', False) and self.training:
+            # (B*T, C, H) -> (B*T, H) : 채널 정보를 평균내어 "전체 상황" 파악
+            mem_pooled = memory.mean(dim=1) 
+            
+            # 예측: (B*T, 3)
+            pred_iv = self.iv_aux_head(mem_pooled)
+            
+            # Shape 복구: (B, T, 3)
+            pred_iv = pred_iv.view(B, T_out, 3)
+
         # Slot Cross-Attention (Simple)
         queries = self.track_embed.expand(B, T_out, -1, -1).reshape(B * T_out, self.num_tracks, H)
         updated_slots = self.slot_attention(queries, memory)
-
-        # # -------------------------------------------------------
-        # # [Step 3] Main Task (DOA Prediction)
-        # # -------------------------------------------------------
-        # # 정제된 특징을 모두 합쳐서 DOA 예측
-        # # (B, 7, T, H) -> (B, T, 7*H)
-        # for fnn_cnt in range(len(self.fnn_list) - 1):
-        #     doa_feat = self.fnn_list[fnn_cnt](updated_slots)
-        # doa = self.fnn_list[-1](doa_feat)
-        # doa = self.doa_act(doa)
-
-        # return doa
-        # [수정 5] FNN 루프 로직 수정 (입력 업데이트 & ReLU 추가)
+        
         doa_feat = updated_slots # 초기 입력 설정
         
         for fnn_cnt in range(len(self.fnn_list) - 1):
             doa_feat = self.fnn_list[fnn_cnt](doa_feat) # 이전 결과(doa_feat)를 넣음
-            doa_feat = F.relu(doa_feat)                 # 활성화 함수 필수!
-            # doa_feat = F.dropout(doa_feat, p=self.params['dropout_rate'], training=self.training)
             
         doa = self.fnn_list[-1](doa_feat)
         doa = self.doa_act(doa)
@@ -148,5 +156,16 @@ class SeldModel(torch.nn.Module):
         # [수정 6] Shape 복구 (B*T -> B, T)
         # (B*T, Slot, Out) -> (B, T, Slot*Out)
         doa = doa.view(B, T_out, self.out_dim)
+
+        if self.training and self.params.get('aux_loss', False):
+                # """
+                # doa_flat: (B, T, num_tracks * (3*num_classes))
+                # returns:  (B, T, 3)  # track+class summed net vector
+                # """
+                # B, T, D = doa.shape
+                # assert D == self.num_tracks * (3 * self.nb_classes), "Output dim mismatch for multi-ACCDOA."
+                # doa_reshape = doa.view(B, T, self.num_tracks, self.nb_classes, 3)  # (B,T,S,C,3)
+                # v_net = doa_reshape.sum(dim=2).sum(dim=2)  # sum over tracks and classes -> (B,T,3)
+                return doa, {"v_net":pred_iv}
 
         return doa

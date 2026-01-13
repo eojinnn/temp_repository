@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from einops import rearrange
-from architecture.CST_details.CST_encoder import CST_attention
+from architecture.CST_details.CST_Former_encoder import CST_attention
 from .layers import LocalPerceptionUint, InvertedResidualFeedForward, Temp_attention, Spec_attention
 
 class CMT_Layers(torch.nn.Module):

@@ -52,7 +52,7 @@ def get_params(argv='1'):
         CMT_split = False,          # Apply LPU & IRFNN on S, T attention layers independently
         multi_accdoa=False,         # False - Single-ACCDOA or True - Multi-ACCDOA
         thresh_unify=15,            # Required for Multi-ACCDOA only. Threshold of unification for inference in degrees.
-        ccad = False,               # i added this
+        decoder = False,            # i added this
 
 
         # DNN MODEL PARAMETERS
@@ -75,6 +75,10 @@ def get_params(argv='1'):
         fnn_size=128,  # FNN contents, length of list = number of layers, list value = number of nodes
 
         nb_epochs=500,  # Train for maximum epochs
+        
+        aux_loss = False,  # Auxiliary DOA loss for Multi-ACCDOA training
+        lambda_aux_loss_out = 0.1,  # Weight of auxiliary DOA loss
+        lambda_aux_loss_mem = 0.05,  # Weight of auxiliary DOA loss memory (decrease over epochs)
 
         # Learning Rate Scheduler
         lr_scheduler = False,
@@ -106,7 +110,11 @@ def get_params(argv='1'):
         params['quick_test'] = False
         params['dataset'] = 'foa'
         params['multi_accdoa'] = True
+        params['aux_loss'] = True
+        params['lambda_aux_loss_out'] = 0.05
+        params['lambda_aux_loss_mem'] = 0.01
 
+        params['decoder'] = True
         params['baseline'] = False
         params['lr_scheduler'] = True
         params['lr_by_epoch'] = True
@@ -177,10 +185,12 @@ def get_params(argv='1'):
         params['CMT_block'] = True
 
         params["f_pool_size"] = [1,2,2] 
-        params['t_pool_size'] = [params['feature_label_resolution'],1,1]
-        params['ccad'] = True
-        params['rnn_size'] = 128
-        params['nb_rnn_layers'] = 2
+        params['t_pool_size'] = [1,1, params['feature_label_resolution']]
+        
+        params['decoder'] = True
+        params['aux_loss'] = True
+        params['lambda_aux_loss_out'] = 0.05
+        params['lambda_aux_loss_mem'] = 0.01
 
     elif argv == '999':
         print("QUICK TEST MODE\n")
